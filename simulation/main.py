@@ -7,6 +7,7 @@ By Hiroya Gojo
 import math
 import os
 import pygame
+import pygame.gfxdraw
 import random
 import sys
 
@@ -20,8 +21,8 @@ DARK_GRAY = (15, 15, 15)
 
 # Initialize for program
 pygame.init()
-WIDTH = 512
-HEIGHT = 512
+WIDTH = 256*2
+HEIGHT = 256*2
 size = (WIDTH, HEIGHT)
 screen = pygame.display.set_mode(size)
 pygame.display.set_caption("Gravity Simulation - Hiroya")
@@ -61,7 +62,9 @@ file_position_x = []
 file_position_y = []
 number_of_objects = 1
 start_mass = 50
-game_speed = 1
+SIM_STEPS = 500
+game_speed = SIM_STEPS * WIDTH//4
+
 
 # Create border
 border_thickness = 5
@@ -77,7 +80,7 @@ draw_path = False
 draw_color = True
 border = False
 file_open = False
-hide_controls = False
+hide_controls = True
 
 # For keeping time
 # Last_saved_time and last_error_time starts at negative to prevent showing at beginning of the game
@@ -149,6 +152,8 @@ class Object:
         self.time = 0
         self.closeness = 0
 
+        self.max_velocity = 0
+
     def calculate_radius(self):
         # Radius is dependent on mass
         # Assumes one unit of mass (1 * 10^11 kg) is equal to one m^2
@@ -164,6 +169,10 @@ class Object:
         target_y = HEIGHT/2
         #TODO total force experienced? velocity delta?
         self.closeness += (((self.position_x - target_x)**2 + (self.position_y - target_y)**2)**0.5)**0.5
+
+        velocity = (self.velocity_x**2 + self.velocity_y**2)**0.5
+        if velocity > self.max_velocity:
+            self.max_velocity = velocity
 
         if border:
             # Check each border for collision
@@ -218,6 +227,8 @@ class Object:
     def calculate_force(self, obj):
         # Equation for gravity (using big G)
         distance = math.sqrt((self.position_x - obj.position_x)**2 + (self.position_y - obj.position_y)**2)
+        if distance == 0:
+            return 0
         return GRAV_CONST * (self.mass * obj.mass)/ (distance**2)
 
     def collision(self, obj):
@@ -252,19 +263,30 @@ class Object:
 
     def getMeasure(self):
         from math import log
-        return log(self.closeness/self.time)
+        if self.time == 0:
+            return 0
+        #return log(self.closeness/self.time)
+        #return log(self.max_velocity)
+        d = ((self.position_x-WIDTH//2)**2 + (self.position_y-HEIGHT//2)**2)**0.5
+        return log(d)
 
     def draw_initial(self):
         def clamp(f):
             return 255-min(255,max(0,int(f)))
 
+        alpha = clamp(self.getMeasure()/largest_value*255)
+
+        pygame.gfxdraw.pixel(screen, int(self.i_position_x), int(self.i_position_y), [255,255,255,alpha])
+
+        """
         surface = pygame.Surface((100,100))
         surface.set_colorkey((0,0,0))
-        alpha = clamp(self.getMeasure()/largest_value*255)
         #print(self.i_position_x, alpha)
         surface.set_alpha(alpha)
-        pygame.draw.circle(surface, [255,255,255,255], (50,50), 4)
-        screen.blit(surface, [int(self.i_position_x), int(self.i_position_y)])
+        radius = 1
+        pygame.draw.circle(surface, [255,255,255,255], (50,50), radius)
+        screen.blit(surface, [int(self.i_position_x)-50-radius/2, int(self.i_position_y)-50-radius/2])
+        """
         #pygame.draw.circle(screen, [255,255,255,255], [int(self.i_position_x), int(self.i_position_y)], 4)
 
     def draw_object(self):
@@ -317,11 +339,15 @@ def open_preset(number):
         else:
             last_error_time = current_time
 
+ITER = 0
 def init_objects():
     global file_position_x
     global file_position_y
     global file_open
     global objects
+
+    global ITER
+    global game_speed
 
     # Resets screen regardless of flag draw_path
     screen.fill(BLACK)
@@ -346,9 +372,14 @@ def init_objects():
             position_x = file_position_x[i]
             position_y = file_position_y[i]
         else:
-            # Randomized position
-            position_x = random.randint(0, size[0])
-            position_y = random.randint(0, size[1])
+            if False:
+                game_speed = 1
+                position_x = 110
+                position_y = 8
+            else:
+                # Randomized position
+                position_x = ITER%WIDTH#random.randint(0, size[0])
+                position_y = ITER//WIDTH#random.randint(0, size[1])
             # Stores position in var for saving
             file_position_x.append(position_x)
             file_position_y.append(position_y)
@@ -362,6 +393,8 @@ def init_objects():
     # File open only works on first run
     file_open = False
 
+    ITER += 1
+
 # Starts offself.closeness/self.time
 init_objects()
 
@@ -370,12 +403,13 @@ largest_value = 1.1
 
 def next_iter():
     global largest_value
-    old_objects.append(objects[-1])
-    measure = old_objects[-1].getMeasure()
-    print(measure)
+    last = objects[-1]
+    old_objects.append(last)
+    measure = last.getMeasure()
+    #print(measure)
     if measure > largest_value:
         largest_value = measure
-        print(largest_value)
+        print(largest_value, last.i_position_x, last.i_position_y)
     init_objects()
 
 # Main loop
@@ -389,8 +423,6 @@ while not done:
         if event.type == pygame.QUIT:
             done = True
 
-    if objects[-1].time > 1000:
-        next_iter()
 
     # Key press
     pressed = pygame.key.get_pressed()
@@ -512,11 +544,12 @@ while not done:
         # Run multiple times for larger game_speed
         for num in range(game_speed):
             # Checks for collision and deletes y if applicable
+            """
             for x in objects:
                 for y in objects:
                     if x != y and not x.merged and not y.merged:
                         x.collision(y)
-
+            """
             # Zeroes out acceleration and old gravitational force
             for x in objects:
                 x.acceleration_x = 0
@@ -533,6 +566,10 @@ while not done:
             # Calculates position based on velocity
             for x in objects:
                 x.calculate_new_position()
+
+            if objects[-1].time > SIM_STEPS:
+                next_iter()
+
 
         # Fill screen
         if not draw_path:
@@ -640,6 +677,8 @@ while not done:
     pygame.display.flip()
 
     # 60 FPS
-    clock.tick(60)
+    clock.tick(120)
 
 pygame.quit()
+
+#for o in old_objects:
