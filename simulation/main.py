@@ -64,15 +64,17 @@ file_position_x = []
 file_position_y = []
 number_of_objects = 1
 start_mass = 50
-SIM = 0#0
-SIM_FIXED = 0
+SIM = 0
+SIM_FIXED = 1
 SIM_STEPS = 150
 SIM_STEP_INC = 150
 SIM_SEQUENTIAL = False
-SIM_X = 302
-SIM_Y = 204
+SIM_X = 7
+SIM_Y = 25
 game_speed = SIM_STEPS * WIDTH//4
 
+CIRCLE_DRAW = False
+CIRCLE_RADIUS = 1
 
 # Create border
 border_thickness = 5
@@ -143,6 +145,8 @@ class Object:
 		self.store_force_x = 0
 		self.store_force_y = 0
 
+		self.moved_path = 0
+
 		self.color = color
 
 		self.i_position_x = position_x
@@ -171,6 +175,8 @@ class Object:
 		# Velocity is change in position
 		self.position_x += self.velocity_x
 		self.position_y += self.velocity_y
+
+		self.moved_path += (self.velocity_x**2+self.velocity_y**2)**0.5
 
 		self.time += 1
 		target_x = WIDTH/2
@@ -274,40 +280,47 @@ class Object:
 		#if self.time == 0 or self.merged:
 		#	return -1
 		#return log(self.closeness/self.time)
-		if self.max_velocity <= 0:
-			return 0
-		return log(self.max_velocity)
+
 		#d = ((self.position_x-WIDTH//2)**2 + (self.position_y-HEIGHT//2)**2)**0.5
 		#return log(d)
+		if self.moved_path <= 0:
+			return 0
+		return log(self.moved_path)
+
+	def getMeasure2(self):
+		if self.max_velocity <= 1:
+			return 0
+		return log(self.max_velocity)
 
 	def draw_initial(self):
 		def clamp(f):
-			return 255-min(255,max(0,int(f)))
+			return min(255,max(0,int(f)))
 
 		measure = self.getMeasure()
+		#TODO 255-
 		mval = clamp(measure/largest_value*255)
+		alpha = mval
+
+		measure2 = self.getMeasure2()
+		mval2 = clamp(measure2/largest_value2*255)
+		blue = mval2
 		if self.merged:
-			alpha = mval
 			red = 255
 			green = 0
-			blue = 0
 		else:
-			alpha = mval
 			red = 0#255
-			green = 0#255
-			blue = 255#255
+			green = 255#255
 
-		pygame.gfxdraw.pixel(screen, int(self.i_position_x), int(self.i_position_y), [red,green,blue,alpha])
+		if CIRCLE_DRAW:
+			surface = pygame.Surface((100,100))
+			surface.set_colorkey((0,0,0))
+			#print(self.i_position_x, alpha)
+			surface.set_alpha(alpha)
 
-		"""
-		surface = pygame.Surface((100,100))
-		surface.set_colorkey((0,0,0))
-		#print(self.i_position_x, alpha)
-		surface.set_alpha(alpha)
-		radius = 1
-		pygame.draw.circle(surface, [255,255,255,255], (50,50), radius)
-		screen.blit(surface, [int(self.i_position_x)-50-radius/2, int(self.i_position_y)-50-radius/2])
-		"""
+			pygame.draw.circle(surface, [red,green,blue,255], (50,50), CIRCLE_RADIUS)
+			screen.blit(surface, [int(self.i_position_x)-50-CIRCLE_RADIUS/2, int(self.i_position_y)-50-CIRCLE_RADIUS/2])
+		else:
+			pygame.gfxdraw.pixel(screen, int(self.i_position_x), int(self.i_position_y), [red,green,blue,alpha])
 		#pygame.draw.circle(screen, [255,255,255,255], [int(self.i_position_x), int(self.i_position_y)], 4)
 
 	def draw_object(self):
@@ -387,12 +400,12 @@ def init_objects():
 		file_position_x[:] = []
 		file_position_y[:] = []
 
-	objects.append(Object(20 * start_mass* (10**11), WIDTH/2 + 50, HEIGHT/2 + 50, [255,0,0]))
-	objects[-1].velocity_x = 6
+	objects.append(Object(1 * start_mass* (10**11), WIDTH/2 + 25, HEIGHT/2 + 25, [255,0,0]))
+	objects[-1].velocity_x = 2
 	objects[-1].calculate_radius()
 
-	objects.append(Object(20 * start_mass* (10**11), WIDTH/2 - 50, HEIGHT/2 - 50, [255,0,0]))
-	objects[-1].velocity_x = -6
+	objects.append(Object(1 * start_mass* (10**11), WIDTH/2 - 25, HEIGHT/2 - 25, [255,0,0]))
+	objects[-1].velocity_x = -2
 	objects[-1].calculate_radius()
 
 	for i in range(number_of_objects):
@@ -403,6 +416,7 @@ def init_objects():
 			position_y = file_position_y[i]
 		else:
 			if SIM:
+				index = 0
 				game_speed = 1
 				position_x = SIM_X if SIM_FIXED else random.randint(0, WIDTH-1)
 				position_y = SIM_Y if SIM_FIXED else random.randint(0, HEIGHT-1)
@@ -455,17 +469,20 @@ init_objects()
 
 old_objects = []
 largest_value = 1.1
+largest_value2 = 0
 screenshot = False
 
 def next_iter():
-	global largest_value
+	global largest_value, largest_value2
 	last = objects[-1]
 	old_objects.append(last)
 	measure = last.getMeasure()
-	#print(measure)
 	if measure > largest_value:
 		largest_value = measure
 		print(largest_value, last.i_position_x, last.i_position_y)
+	measure2 = last.getMeasure2()
+	if measure2 > largest_value2:
+		largest_value2 = measure2
 	init_objects()
 
 # Main loop
@@ -752,7 +769,7 @@ while not done:
 	pygame.display.flip()
 
 	# 60 FPS
-	clock.tick(120)
+	clock.tick(30)
 
 
 pygame.quit()
