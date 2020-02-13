@@ -20,7 +20,9 @@ DARK_GRAY = (15, 15, 15)
 
 # Initialize for program
 pygame.init()
-size = (1280, 720)
+WIDTH = 512
+HEIGHT = 512
+size = (WIDTH, HEIGHT)
 screen = pygame.display.set_mode(size)
 pygame.display.set_caption("Gravity Simulation - Hiroya")
 
@@ -57,7 +59,7 @@ random.seed()
 objects = []
 file_position_x = []
 file_position_y = []
-number_of_objects = 15
+number_of_objects = 1
 start_mass = 50
 game_speed = 1
 
@@ -114,7 +116,7 @@ def read_from_file(str_name):
         preset_file.close()
         return True
     return False
- 
+
 # Checks for file to open
 if len(sys.argv) > 1:
     file_to_open = sys.argv[1]
@@ -123,14 +125,17 @@ if len(sys.argv) > 1:
 # class object
 class Object:
     def __init__ (self, mass, position_x, position_y, color):
-        # Initialize mass and position 
+        # Initialize mass and position
         self.mass = mass
         self.merged = False
         self.selected = False
         self.store_force_x = 0
         self.store_force_y = 0
-                
+
         self.color = color
+
+        self.i_position_x = position_x
+        self.i_position_y = position_y
 
         self.position_x = position_x
         self.position_y = position_y
@@ -141,6 +146,9 @@ class Object:
         self.velocity_x = 0
         self.velocity_y = 0
 
+        self.time = 0
+        self.closeness = 0
+
     def calculate_radius(self):
         # Radius is dependent on mass
         # Assumes one unit of mass (1 * 10^11 kg) is equal to one m^2
@@ -150,6 +158,12 @@ class Object:
         # Velocity is change in position
         self.position_x += self.velocity_x
         self.position_y += self.velocity_y
+
+        self.time += 1
+        target_x = WIDTH/2
+        target_y = HEIGHT/2
+        #TODO total force experienced? velocity delta?
+        self.closeness += (((self.position_x - target_x)**2 + (self.position_y - target_y)**2)**0.5)**0.5
 
         if border:
             # Check each border for collision
@@ -236,10 +250,30 @@ class Object:
                 self.merged = True
                 obj.calculate_radius()
 
+    def getMeasure(self):
+        from math import log
+        return log(self.closeness/self.time)
+
+    def draw_initial(self):
+        def clamp(f):
+            return 255-min(255,max(0,int(f)))
+
+        surface = pygame.Surface((100,100))
+        surface.set_colorkey((0,0,0))
+        alpha = clamp(self.getMeasure()/largest_value*255)
+        #print(self.i_position_x, alpha)
+        surface.set_alpha(alpha)
+        pygame.draw.circle(surface, [255,255,255,255], (50,50), 4)
+        screen.blit(surface, [int(self.i_position_x), int(self.i_position_y)])
+        #pygame.draw.circle(screen, [255,255,255,255], [int(self.i_position_x), int(self.i_position_y)], 4)
 
     def draw_object(self):
+
+        self.draw_initial()
+
         if not self.merged:
             # If an object is selected, draw an outline around them
+
             if self.selected:
                 pygame.draw.circle(screen, DARK_RED, [int(self.position_x), int(self.position_y)], int(self.radius) + 4)
 
@@ -292,9 +326,18 @@ def init_objects():
     # Resets screen regardless of flag draw_path
     screen.fill(BLACK)
     del objects[:]
+    #objects = []
     if not file_open:
         file_position_x[:] = []
         file_position_y[:] = []
+
+    objects.append(Object(20 * start_mass* (10**11), WIDTH/2 + 50, HEIGHT/2 + 50, [255,0,0]))
+    objects[-1].velocity_x = 6
+    objects[-1].calculate_radius()
+
+    objects.append(Object(20 * start_mass* (10**11), WIDTH/2 - 50, HEIGHT/2 - 50, [255,0,0]))
+    objects[-1].velocity_x = -6
+    objects[-1].calculate_radius()
 
     for i in range(number_of_objects):
         # Mass must be in 10^11kg scale (because gravity would be too weak otherwise)
@@ -313,12 +356,27 @@ def init_objects():
         color = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
         # Add the object and calculate radius
         objects.append(Object(mass, position_x, position_y, color))
-        objects[i].calculate_radius()
+        objects[-1].calculate_radius()
+
+
     # File open only works on first run
     file_open = False
 
-# Starts off
+# Starts offself.closeness/self.time
 init_objects()
+
+old_objects = []
+largest_value = 1.1
+
+def next_iter():
+    global largest_value
+    old_objects.append(objects[-1])
+    measure = old_objects[-1].getMeasure()
+    print(measure)
+    if measure > largest_value:
+        largest_value = measure
+        print(largest_value)
+    init_objects()
 
 # Main loop
 while not done:
@@ -331,17 +389,20 @@ while not done:
         if event.type == pygame.QUIT:
             done = True
 
+    if objects[-1].time > 1000:
+        next_iter()
+
     # Key press
     pressed = pygame.key.get_pressed()
     if pressed[pygame.K_SPACE] and current_time > delay + last_time:
         # Delete objects and reinitialize for new set of objects
         last_time = current_time
-        init_objects()
+        next_iter()
 
     # Path
     elif pressed[pygame.K_z] and current_time > delay + last_time:
         last_time = current_time
-        draw_path = not draw_path 
+        draw_path = not draw_path
 
     # Border
     elif pressed[pygame.K_x] and current_time > delay + last_time:
@@ -473,13 +534,16 @@ while not done:
             for x in objects:
                 x.calculate_new_position()
 
-            # Fill screen
-            if not draw_path:
-                screen.fill(BLACK)
+        # Fill screen
+        if not draw_path:
+            screen.fill(BLACK)
 
-            # Draw
-            for i in objects:
-                i.draw_object()
+        for o in old_objects:
+            o.draw_initial()
+
+        # Draw
+        for i in objects:
+            i.draw_object()
 
     if not hide_controls:
         # Rectangle for top bar
@@ -536,7 +600,7 @@ while not done:
         screen.blit(text_number, (400, 14))
         screen.blit(text_g, (400, 40))
         screen.blit(text_h, (400, 55))
-        
+
         # Instructions
         screen.blit(text_space, (10, size[1] - 100))
         screen.blit(text_z, (10, size[1] - 75))
@@ -577,5 +641,5 @@ while not done:
 
     # 60 FPS
     clock.tick(60)
-    
+
 pygame.quit()
